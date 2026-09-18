@@ -21,13 +21,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # no release yet → the API answers 404 (and jq prints "null"), so only trust a real v1.xx tag
           last=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || true)
-          if [ -z "$last" ]; then
-            next="1.00"
-          else
-            n=$(echo "${last#v}" | awk -F. '{ printf "%d", $1 * 100 + $2 }')
-            next=$(awk -v n=$((n + 1)) 'BEGIN { printf "%d.%02d", int(n / 100), n % 100 }')
-          fi
+          case "$last" in
+            v[0-9]*.[0-9][0-9])
+              n=$(echo "${last#v}" | awk -F. '{ printf "%d", $1 * 100 + $2 }')
+              next=$(awk -v n=$((n + 1)) 'BEGIN { printf "%d.%02d", int(n / 100), n % 100 }')
+              ;;
+            *)
+              last=""
+              next="1.00"
+              ;;
+          esac
           echo "previous=${last:-none}"
           echo "version=$next" >> "$GITHUB_OUTPUT"
 
