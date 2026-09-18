@@ -1,0 +1,59 @@
+name: Release
+
+# Manual: Actions → Release → Run workflow. Packs fonts/ + LICENSE + README into
+# CabinMono-<version>.zip and publishes a GitHub release tagged v<version>.
+# The version is read from the latest release and raised by 0.01 (1.00, 1.01, …).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Next version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [ -z "$last" ]; then
+            next="1.00"
+          else
+            n=$(echo "${last#v}" | awk -F. '{ printf "%d", $1 * 100 + $2 }')
+            next=$(awk -v n=$((n + 1)) 'BEGIN { printf "%d.%02d", int(n / 100), n % 100 }')
+          fi
+          echo "previous=${last:-none}"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -e
+          dir="CabinMono-$VERSION"
+          mkdir -p "dist/$dir"
+          cp fonts/*.ttf fonts/*.woff2 LICENSE README.md "dist/$dir/"
+          (cd dist && zip -r -X "$dir.zip" "$dir")
+          {
+            echo "Cabin Mono $VERSION"
+            echo
+            echo "Fonts from commit ${GITHUB_SHA::7}."
+            echo
+            echo '```'
+            (cd "dist/$dir" && ls -l --block-size=K *.ttf *.woff2 | awk '{ printf "%-40s %s\n", $9, $5 }')
+            echo '```'
+          } > dist/notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" "dist/CabinMono-$VERSION.zip" \
+            --title "Cabin Mono $VERSION" --notes-file dist/notes.md
